@@ -129,6 +129,7 @@ func search(w http.ResponseWriter, r *http.Request) {
 			rel, _ := filepath.Rel(config.Server.RrdPath, path)
 			fName := strings.Replace(rel, ".rrd", "", 1)
 			fName = strings.Replace(fName, "/", ":", -1)
+			fName = strings.Replace(fName, ".", "·", -1)
 			infoRes, err := rrd.Info(path)
 			if err != nil {
 				fmt.Println("ERROR: Cannot retrieve information from ", path)
@@ -172,7 +173,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 		ds := target.Target[strings.LastIndex(target.Target, ":")+1 : len(target.Target)]
 		rrdDsRep := regexp.MustCompile(`:` + ds + `$`)
 		fileSearchPath := rrdDsRep.ReplaceAllString(target.Target, "")
-		fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(fileSearchPath, ":", "/", -1) + ".rrd"
+		fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(strings.Replace(fileSearchPath, "·", ".", -1), ":", "/", -1) + ".rrd"
 
 		fileNameArray, _ := zglob.Glob(fileSearchPath)
 		for _, filePath := range fileNameArray {

@@ -228,7 +228,10 @@ func query(w http.ResponseWriter, r *http.Request) {
 			if to.After(lastUpdate) && lastUpdate.After(from) {
 				to = lastUpdate
 			}
-			fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
+
+			cs := string(infoRes["rra.cf"].([]interface{})[0].(string))
+
+			fetchRes, err := rrd.Fetch(filePath, cs, from, to, time.Duration(config.Server.Step)*time.Second)
 			if err != nil {
 				fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
 				fmt.Println(err)

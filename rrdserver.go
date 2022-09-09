@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/facebookgo/symwalk"
 	"github.com/gocarina/gocsv"
 	"github.com/mattn/go-zglob"
 	"github.com/ziutek/rrd"
@@ -128,7 +129,7 @@ func (w *SearchCache) Update() {
 	newItems := []string{}
 
 	fmt.Println("Updating search cache.")
-	err := filepath.Walk(strings.TrimRight(config.Server.RrdPath, "/")+"/",
+	err := symwalk.Walk(strings.TrimRight(config.Server.RrdPath, "/")+"/",
 		func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -239,7 +240,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 			fileSearchPath := rrdDsRep.ReplaceAllString(target.Target, "")
 			fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(strings.Replace(fileSearchPath, "·", ".", -1), ":", "/", -1) + ext
 
-			fileNameArray, _ := zglob.Glob(fileSearchPath)
+			fileNameArray, _ := zglob.GlobFollowSymlinks(fileSearchPath)
 			for _, filePath := range fileNameArray {
 				points := make([][]float64, 0)
 				if _, err = os.Stat(filePath); err != nil {

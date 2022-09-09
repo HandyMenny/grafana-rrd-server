@@ -268,7 +268,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 				}
 				timestamp = timestamp.Add(fetchRes.Step)
 			}
-			defer fetchRes.FreeValues()
+			fetchRes.FreeValues()
 
 			extractedTarget := strings.Replace(filePath, ".rrd", "", -1)
 			extractedTarget = strings.Replace(extractedTarget, config.Server.RrdPath, "", -1)

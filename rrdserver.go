@@ -258,9 +258,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 			}
 			timestamp := fetchRes.Start
 			dsIndex := int(infoRes["ds.index"].(map[string]interface{})[ds].(uint))
-			// The last point is likely to contain wrong data (mostly a big number)
-			// RowCnt-1 is for ignoring the last point (temporary solution)
-			for i := 0; i < fetchRes.RowCnt-1; i++ {
+			for i := 0; i < fetchRes.RowCnt; i++ {
 				value := fetchRes.ValueAt(dsIndex, i)
 				if !math.IsNaN(value) {
 					product := float64(config.Server.Multiplier) * value

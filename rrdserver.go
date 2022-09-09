@@ -133,11 +133,13 @@ func (w *SearchCache) Update() {
 				return err
 			}
 
-			if info.IsDir() || !strings.Contains(info.Name(), ".rrd") {
+			if info.IsDir() || !strings.HasSuffix(info.Name(), ".rrd") {
 				return nil
 			}
-			rel, _ := filepath.Rel(config.Server.RrdPath, path)
-			fName := strings.Replace(rel, ".rrd", "", 1)
+			fName, _ := filepath.Rel(config.Server.RrdPath, path)
+			if !info.IsDir() {
+				fName = strings.TrimSuffix(fName, ".rrd")
+			}
 			fName = strings.Replace(fName, "/", ":", -1)
 			fName = strings.Replace(fName, ".", "·", -1)
 			infoRes, err := rrd.Info(path)
@@ -270,7 +272,7 @@ func query(w http.ResponseWriter, r *http.Request) {
 			}
 			fetchRes.FreeValues()
 
-			extractedTarget := strings.Replace(filePath, ".rrd", "", -1)
+			extractedTarget := strings.TrimSuffix(filePath, ".rrd")
 			extractedTarget = strings.Replace(extractedTarget, config.Server.RrdPath, "", -1)
 			extractedTarget = strings.Replace(extractedTarget, "/", ":", -1) + ":" + ds
 			result = append(result, QueryResponse{Target: extractedTarget, DataPoints: points})

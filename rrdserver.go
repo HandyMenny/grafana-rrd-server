@@ -101,6 +101,7 @@ type ServerConfig struct {
 	Port               int
 	AnnotationFilePath string
 	Multiplier         int
+	RrdExtensions      []string
 }
 
 type ErrorResponse struct {
@@ -133,12 +134,12 @@ func (w *SearchCache) Update() {
 				return err
 			}
 
-			if info.IsDir() || !strings.HasSuffix(info.Name(), ".rrd") {
+			if info.IsDir() || !stringHasSuffixes(info.Name(), config.Server.RrdExtensions) {
 				return nil
 			}
 			fName, _ := filepath.Rel(config.Server.RrdPath, path)
 			if !info.IsDir() {
-				fName = strings.TrimSuffix(fName, ".rrd")
+				fName = stringTrimSuffixes(fName, config.Server.RrdExtensions)
 			}
 			fName = strings.Replace(fName, "/", ":", -1)
 			fName = strings.Replace(fName, ".", "·", -1)
@@ -234,48 +235,50 @@ func query(w http.ResponseWriter, r *http.Request) {
 	for _, target := range queryRequest.Targets {
 		ds := target.Target[strings.LastIndex(target.Target, ":")+1 : len(target.Target)]
 		rrdDsRep := regexp.MustCompile(`:` + ds + `$`)
-		fileSearchPath := rrdDsRep.ReplaceAllString(target.Target, "")
-		fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(strings.Replace(fileSearchPath, "·", ".", -1), ":", "/", -1) + ".rrd"
+		for _, ext := range config.Server.RrdExtensions {
+			fileSearchPath := rrdDsRep.ReplaceAllString(target.Target, "")
+			fileSearchPath = strings.TrimRight(config.Server.RrdPath, "/") + "/" + strings.Replace(strings.Replace(fileSearchPath, "·", ".", -1), ":", "/", -1) + ext
 
-		fileNameArray, _ := zglob.Glob(fileSearchPath)
-		for _, filePath := range fileNameArray {
-			points := make([][]float64, 0)
-			if _, err = os.Stat(filePath); err != nil {
-				fmt.Println("File", filePath, "does not exist")
-				continue
-			}
-			infoRes, err := rrd.Info(filePath)
-			if err != nil {
-				fmt.Println("ERROR: Cannot retrieve information from ", filePath)
-				fmt.Println(err)
-			}
-			lastUpdate := time.Unix(int64(infoRes["last_update"].(uint)), 0)
-			if to.After(lastUpdate) && lastUpdate.After(from) {
-				to = lastUpdate
-			}
-			fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
-			if err != nil {
-				fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
-				fmt.Println(err)
-			}
-			timestamp := fetchRes.Start
-			dsIndex := int(infoRes["ds.index"].(map[string]interface{})[ds].(uint))
-			// The last point is likely to contain wrong data (mostly a big number)
-			// RowCnt-1 is for ignoring the last point (temporary solution)
-			for i := 0; i < fetchRes.RowCnt-1; i++ {
-				value := fetchRes.ValueAt(dsIndex, i)
-				if !math.IsNaN(value) {
-					product := float64(config.Server.Multiplier) * value
-					points = append(points, []float64{product, float64(timestamp.Unix()) * 1000})
+			fileNameArray, _ := zglob.Glob(fileSearchPath)
+			for _, filePath := range fileNameArray {
+				points := make([][]float64, 0)
+				if _, err = os.Stat(filePath); err != nil {
+					fmt.Println("File", filePath, "does not exist")
+					continue
 				}
-				timestamp = timestamp.Add(fetchRes.Step)
-			}
-			fetchRes.FreeValues()
+				infoRes, err := rrd.Info(filePath)
+				if err != nil {
+					fmt.Println("ERROR: Cannot retrieve information from ", filePath)
+					fmt.Println(err)
+				}
+				lastUpdate := time.Unix(int64(infoRes["last_update"].(uint)), 0)
+				if to.After(lastUpdate) && lastUpdate.After(from) {
+					to = lastUpdate
+				}
+				fetchRes, err := rrd.Fetch(filePath, "AVERAGE", from, to, time.Duration(config.Server.Step)*time.Second)
+				if err != nil {
+					fmt.Println("ERROR: Cannot retrieve time series data from ", filePath)
+					fmt.Println(err)
+				}
+				timestamp := fetchRes.Start
+				dsIndex := int(infoRes["ds.index"].(map[string]interface{})[ds].(uint))
+				// The last point is likely to contain wrong data (mostly a big number)
+				// RowCnt-1 is for ignoring the last point (temporary solution)
+				for i := 0; i < fetchRes.RowCnt-1; i++ {
+					value := fetchRes.ValueAt(dsIndex, i)
+					if !math.IsNaN(value) {
+						product := float64(config.Server.Multiplier) * value
+						points = append(points, []float64{product, float64(timestamp.Unix()) * 1000})
+					}
+					timestamp = timestamp.Add(fetchRes.Step)
+				}
+				fetchRes.FreeValues()
 
-			extractedTarget := strings.TrimSuffix(filePath, ".rrd")
-			extractedTarget = strings.Replace(extractedTarget, config.Server.RrdPath, "", -1)
-			extractedTarget = strings.Replace(extractedTarget, "/", ":", -1) + ":" + ds
-			result = append(result, QueryResponse{Target: extractedTarget, DataPoints: points})
+				extractedTarget := strings.TrimSuffix(filePath, ext)
+				extractedTarget = strings.Replace(extractedTarget, config.Server.RrdPath, "", -1)
+				extractedTarget = strings.Replace(extractedTarget, "/", ":", -1) + ":" + ds
+				result = append(result, QueryResponse{Target: extractedTarget, DataPoints: points})
+			}
 		}
 	}
 	respondJSON(w, result)
@@ -328,7 +331,24 @@ func annotations(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func stringTrimSuffixes(string string, suffixes []string) string {
+	for _, ext := range suffixes {
+		string = strings.TrimSuffix(string, ext)
+	}
+	return string
+}
+
+func stringHasSuffixes(string string, suffixes []string) bool {
+	for _, ext := range suffixes {
+		if strings.HasSuffix(string, ext) {
+			return true
+		}
+	}
+	return false
+}
+
 func SetArgs() {
+	var rrdExtension string
 	flag.StringVar(&config.Server.IpAddr, "i", "", "Network interface IP address to listen on. (default: any)")
 	flag.IntVar(&config.Server.Port, "p", 9000, "Server port.")
 	flag.StringVar(&config.Server.RrdPath, "r", "./sample/", "Path for a directory that keeps RRD files.")
@@ -336,7 +356,9 @@ func SetArgs() {
 	flag.Int64Var(&config.Server.SearchCache, "c", 600, "Search cache in seconds.")
 	flag.StringVar(&config.Server.AnnotationFilePath, "a", "", "Path for a file that has annotations.")
 	flag.IntVar(&config.Server.Multiplier, "m", 1, "Value multiplier.")
+	flag.StringVar(&rrdExtension, "e", ".rrd", "Rrd file extensione comma separated (no space).")
 	flag.Parse()
+	config.Server.RrdExtensions = strings.Split(rrdExtension, ",")
 }
 
 func main() {
